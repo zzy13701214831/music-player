@@ -1,0 +1,881 @@
+安装stylus
+stylus: npm install stylus stylus-loader style-loader --save-dev
+配置路径base
+resolve: {
+  extensions: ['.js', '.vue', '.json'],
+  alias: {
+    'vue$': 'vue/dist/vue.esm.js',
+    '@': resolve('src'),
+    'common': resolve('src/common')
+  }
+}
+移动端配置 index.html meta标签 
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+
+cnpm install babel-runtime fastclick babel-polyfill --save-dev
+runtime对ES6语法转义 fastclick解决移动端点击300ms延时 polyfill对ES6的API做转义
+import fastclick from 'fastclick'
+fastclick.attach(document.body)
+
+基础组件库base 业务组件库components
+
+抓取数据 qq音乐
+从network中可以看到jsonp获取数据
+
+npm install jsonp --save-dev
+重新封装jsonp
+
+import originJsonp from 'jsonp'
+
+export default function jsonp(url, data, option) {
+	url += (url.indexOf('?') < 0 ? '?' : '&') + param(data)
+
+	return new Promise((resolve, reject) => {
+		originJsonp(url, option, (err, data) => {
+			if (!err) {
+				resolve(data)
+			} else {
+				reject(err)
+			}
+		})
+	})
+}
+
+function param(data) {
+	let url = ''
+	for (var k in data) {
+		let value = data[k] !== undefined ? data[k] : ''
+		url += '&' + k + '=' + encodeURIComponent(value)
+	}
+	return url ? url.substring(1) : ''
+}
+
+
+定义参数config.js
+export const commonParams = {
+	g_tk: 5381,
+	inCharset: 'utf-8',
+	outCharset: 'utf-8',
+	notice: 0,
+	format: 'jsonp'
+}
+
+export const options = {
+	param: 'jsonpCallback'
+}
+
+export const ERR_OK = 0
+
+获取数据 recommend.js
+import jsonp from 'common/js/jsonp'
+import {commonParams, options} from './config'
+
+export function getRecommend() {
+	const url = 'https://c.y.qq.com/musichall/fcgi-bin/fcg_yqqhomepagerecommend.fcg'
+
+	const data = Object.assign({}, commonParams, {
+		platform: 'h5',
+		uin: 0,
+		needNewCode: 1
+	})
+
+	return jsonp(url, data, options)
+}
+
+recommend.vue使用jsonp获取数据
+export default {
+	created() {
+		this._getRecommend()
+	},
+	methods: {
+		_getRecommend() {
+			getRecommend().then((res) => {
+				if (res.code === ERR_OK) {
+					console.log(res.data.slider)
+				}
+			})
+		}
+	}
+}
+
+轮播图组件
+视口父容器 子容器是滑动的列表 自动轮播
+slot插槽
+cnpm install better-scroll --save-dev
+
+dom.js封装dom操作基本方法
+export function addClass(el, className) {
+	if (hasClass(el, className)) {
+		return
+	}
+	let newClass = el.className.split(' ')
+	newClass.push(className)
+	el.className = newClass.join(' ')
+}
+
+export function hasClass(el, className) {
+	let reg = new RegExp('(^|\\s)' + className + '(\\s|$)')
+	return reg.test(el.className)
+}
+
+BScroll初始化：
+methods: {
+  _setSliderWidth() {
+    this.children = this.$refs.sliderGroup.children
+
+    let width = 0
+    let sliderWidth = this.$refs.slider.clientWidth
+    for (let i = 0; i < this.children.length; i++) {
+      let child = this.children[i]
+      addClass(child, 'slider-item')
+
+      child.style.width = sliderWidth + 'px'
+      width += sliderWidth
+    }
+
+    if (this.loop) {
+      width += 2 * sliderWidth
+    }
+    this.$refs.sliderGroup.style.width = width + 'px'
+  },
+  _initSlider() {
+    this.slider = new BScroll(this.$refs.slider, {
+      scrollX: true,
+      momentum: false,
+      snap: {
+        loop: this.loop,
+        threshold: 0.3,
+        speed: 400
+      }
+    })
+  }
+}
+
+自动轮播：
+if (this.autoPlay) {
+  clearTimeout(this.timer)
+  this._play()
+}
+_play() {
+  let pageIndex = this.currentPageIndex + 1
+  if (this.loop) {
+    pageIndex += 1
+  }
+  this.timer = setTimeout(() => {
+    this.slider.goToPage(pageIndex, 0, 400)
+  }, this.interval)
+}
+视口改变时刷新：
+window.addEventListener('resize', () => {
+  if (!this.slider) {
+    return
+  }
+  this._setSliderWidth(true)
+  this.slider.refresh()
+})
+
+请求接口的时候有一个host和referer，服务端校验了这个接口，我们请求数据时需要绕过这个校验
+通过后端代理 利用axios库
+export function getDiscList() {
+	const url = '/api/getDiscList'
+
+	const data = Object.assign({}, commonParams, {
+		platform: 'yqq',
+		hostUin: 0,
+		sin: 0,
+		ein: 29,
+		sortId: 5,
+		needNewCode: 0,
+		categoryId: 10000000,
+		rnd: Math.random(),
+		format: 'json'
+	})
+
+	return axios.get(url, {
+		params: data
+	}).then((res) => {
+		return Promise.resolve(res.data)
+	})
+}
+
+var apiRoutes = express.Router()
+
+apiRoutes.get('/getDiscList', function (req, res) {
+  var url = 'https://c.y.qq.com/splcloud/fcgi-bin/fcg_get_diss_by_tag.fcg'
+
+  axios.get(url, {
+    headers: {
+      referer: 'https://c.y.qq.com',
+      host: 'c.y.qq.com'
+    },
+    params: req.query
+  }).then((response) => {
+    res.json(response.data)
+  }).catch((e) => {
+    console.log(e)
+  })
+})
+
+app.use('/api', apiRoutes)
+假冒host和referer 抓取数据
+
+用flex实现居中
+.item
+	display: flex
+	box-sizing: border-box
+	align-items: center
+	padding: 0 20px 20px 20px
+	.icon
+		flex: 0 0 60px
+		width: 60px
+		padding-right: 20px
+	.text
+		display: flex
+		flex-direction: column
+		justify-content: center
+		flex: 1
+		line-height: 20px
+		overflow: hidden
+		font-size: $font-size-medium
+
+抽象出scroll组件 利用slot插槽
+<template>
+  <div ref="wrapper">
+    <slot></slot>
+  </div>
+</template>
+
+<script type="text/ecmascript-6">
+  import BScroll from 'better-scroll'
+
+  export default {
+    props: {
+      probeType: {
+        type: Number,
+        default: 1
+      },
+      click: {
+        type: Boolean,
+        default: true
+      },
+      data: {
+        type: Array,
+        default: null
+      }
+    },
+    mounted() {
+      setTimeout(() => {
+        this._initScroll()
+      }, 20)
+    },
+    methods: {
+      _initScroll() {
+        if (!this.$refs.wrapper) {
+          return
+        }
+        this.scroll = new BScroll(this.$refs.wrapper, {
+          probeType: this.probeType,
+          click: this.click
+        })
+      },
+      enable() {
+        this.scroll && this.scroll.enable()
+      },
+      disable() {
+        this.scroll && this.scroll.disable()
+      },
+      refresh() {
+        this.scroll && this.scroll.refresh()
+      }
+    },
+    watch: {
+      data() {
+        setTimeout(() => {
+          this.refresh()
+        }, 20)
+      }
+    }
+  }
+</script>
+
+better-scroll refresh的关键时机 正确计算高度 数据变化刷新
+
+图片懒加载 vue-lazyload
+import VueLazyLoad from 'vue-lazyload'
+Vue.use(VueLazyLoad, {
+	loading: require('common/image/default.png')
+})
+<img v-lazy="item.imgurl" width="60" height="60">
+
+加载过程loading组件
+<template>
+  <div class="loading">
+    <img width="24" height="24" src="./loading.gif">
+    <p class="desc">{{title}}</p>
+  </div>
+</template>
+<script type="text/ecmascript-6">
+  export default {
+    props: {
+      title: {
+        type: String,
+        default: '正在载入...'
+      }
+    }
+  }
+</script>
+<style scoped lang="stylus" rel="stylesheet/stylus">
+  @import "~common/stylus/variable"
+
+  .loading
+    width: 100%
+    text-align: center
+    .desc
+      line-height: 20px
+      font-size: $font-size-small
+      color: $color-text-l
+</style>
+
+对请求获取的数据聚合分类
+_normalizeSinger(list) {
+	let map = {
+		hot: {
+			title: HOT_NAME,
+			items: []
+		}
+	}
+	list.forEach((item, index) => {
+		if (index < HOT_SINGER_LEN) {
+			map.hot.items.push(new Singer({
+				id: item.Fsinger_mid,
+				name: item.Fsinger_name
+			}))
+		}
+		const key = item.Findex
+		if (!map[key]) {
+			map[key] = {
+				title: key,
+				items: []
+			}
+		}
+		map[key].items.push(new Singer({
+			id: item.Fsinger_mid,
+			name: item.Fsinger_name
+		}))
+	})
+	// 为了得到有序列表 需要处理 map
+	let hot = []
+	let ret = []
+	for (let key in map) {
+		let val = map[key]
+		if (val.title.match(/[a-zA-Z]/)) {
+			ret.push(val)
+		} else if (val.title === HOT_NAME) {
+			hot.push(val)
+		}
+	}
+	ret.sort((a, b) => {
+		return a.title.charCodeAt(0) - b.title.charCodeAt(0)
+	})
+	return hot.concat(ret)
+}
+
+快速入口滚动绑定(类似手机联系人)
+scrollTo() {
+  this.scroll && this.scroll.scrollTo.apply(this.scroll, arguments)
+},
+scrollToElement() {
+  this.scroll && this.scroll.scrollToElement.apply(this.scroll, arguments)
+}
+
+在scroll组件中派发事件
+if (this.listenScroll) {
+  let me = this
+  this.scroll.on('scroll', (pos) => {
+    me.$emit('scroll', pos)
+  })
+}
+
+//listview中使用
+data() {
+  return {
+    scrollY: -1,
+    currentIndex: 0
+  }
+},
+created() {
+  this.touch = {}
+  this.listenScroll = true
+  this.listHeight = []
+  this.probeType = 3
+},
+computed: {
+  shortcutList() {
+    return this.data.map((group) => {
+      return group.title.substr(0, 1)
+    })
+  }
+},
+methods: {
+  onShortcutTouchStart(e) {
+    let anchorIndex = getData(e.target, 'index')
+    let firstTouch = e.touches[0]
+    this.touch.y1 = firstTouch.pageY
+    this.touch.anchorIndex = anchorIndex
+    this._scrollTo(anchorIndex)
+  },
+  onShortcutTouchMove(e) {
+    let firstTouch = e.touches[0]
+    this.touch.y2 = firstTouch.pageY
+    let delta = (this.touch.y2 - this.touch.y1) / ANCHOR_HEIGHT | 0
+    let anchorIndex = parseInt(this.touch.anchorIndex) + delta
+    this._scrollTo(anchorIndex)
+  },
+  scroll(pos) {
+    this.scrollY = pos.y
+  },
+  _scrollTo(index) {
+    this.$refs.listview.scrollToElement(this.$refs.listGroup[index], 0)
+  },
+  _calculateHeight() {
+    this.listHeight = []
+    const list = this.$refs.listGroup
+    let height = 0
+    this.listHeight.push(height)
+    for (let i = 0; i < list.length; i++) {
+      let item = list[i]
+      height += item.clientHeight
+      this.listHeight.push(height)
+    }
+  }
+},
+watch: {
+  data() {
+    setTimeout(() => {
+      this._calculateHeight()
+    }, 20)
+  },
+  scrollY(newY) {
+    const listHeight = this.listHeight
+    // 当滚动到顶部，newY > 0
+    if (newY > 0) {
+      this.currentIndex = 0
+      return
+    }
+    // 在中间部分滚动
+    for (let i = 0; i < listHeight.length - 1; i++) {
+      let height1 = listHeight[i]
+      let height2 = listHeight[i + 1]
+      if (-newY >= height1 && -newY < height2) {
+        this.currentIndex = i
+        return
+      }
+    }
+    // 当滚动到底部 且-newY大于最后一个元素的上限
+    this.currentIndex = listHeight.length - 2
+  }
+}
+
+固定栏目
+<div class="list-fixed" ref="fixed" v-show="fixedTitle">
+  <h1 class="fixed-title">{{fixedTitle}}</h1>
+</div>
+在中间滚动时
+this.diff = height2 + newY
+watch diff变化时判断
+diff(newVal) {
+  let fixedTop = (newVal > 0 && newVal < TITLE_HEIGHT) ? newVal - TITLE_HEIGHT : 0
+  if (this.fixedTop === fixedTop) {
+    return
+  }
+  this.fixedTop = fixedTop
+  this.$refs.fixed.style.transform = `translate3d(0,${fixedTop}px,0)`
+}
+
+学习笔记（2）
+歌手详情页面
+子路由
+  path: '/singer',
+  component: Singer,
+  children: [
+    {
+      path: ':id',
+      component: SingerDetail
+    }
+  ]
+selectSinger(singer) {
+  this.$router.push({
+    path: `/singer/${singer.id}`
+  })
+}
+
+Vuex 状态管理 是一种设计思想 把所有组件的所有状态和数据放在一个统一的内存空间去管理 组件通过Dispatch一个Action和后端交互 通过Commit一个Mutation去修改State 反应到组件上
+这确实会让修改数据的路径变长，但可以解决多个组件之间的状态共享（尤其是兄弟组件，或关联度很低的组件），可以解决复杂应用数据传递
+
+import Vue from 'vue'
+import Vuex from 'vuex'
+import * as actions from './actions'
+import * as getters from './getters'
+import state from './state'
+import mutations from './mutations'
+import ceateLogger from 'vuex/dist/logger'
+
+Vue.use(Vuex)
+
+const debug = process.env.NODE_ENV !== 'production'
+
+export default new Vuex.Store({
+  actions,
+  getters,
+  state,
+  mutations,
+  strict: debug,
+  plugins: debug ? [ceateLogger()] : []
+})
+
+vuex为读写数据提供语法糖
+import {mapMutations} from 'vuex'
+...mapMutations({
+  setSinger: 'SET_SINGER'
+})
+
+import {mapGetters} from 'vuex'
+computed: {
+  ...mapGetters([
+    'singer'
+  ])
+}
+
+// music-list组件 滚动和动画效果
+  import Scroll from 'base/scroll/scroll'
+  import SongList from 'base/song-list/song-list'
+  import {prefixStyle} from 'common/js/dom'
+
+  const RESERVED_HEIGHT = 40
+  const transform = prefixStyle('transform')
+  const backdrop = prefixStyle('backdrop-filter')
+
+  export default {
+    data() {
+      return {
+        scrollY: 0
+      }
+    },
+    props: {
+      bgImage: {
+        type: String,
+        default: ''
+      },
+      songs: {
+        type: Array,
+        default() {
+          return []
+        }
+      },
+      title: {
+        type: String,
+        default: ''
+      }
+    },
+    computed: {
+      bgStyle() {
+        return `background-image:url(${this.bgImage})`
+      }
+    },
+    created() {
+      this.probeType = 3
+      this.listenScroll = true
+    },
+    mounted() {
+      this.imageHeight = this.$refs.bgImage.clientHeight
+      this.minTranslateY = -this.imageHeight + RESERVED_HEIGHT
+      this.$refs.list.$el.style.top = `${this.imageHeight}px`
+    },
+    methods: {
+      scroll(pos) {
+        this.scrollY = pos.y
+      },
+      back() {
+        this.$router.back()
+      }
+    },
+    watch: {
+      scrollY(newY) {
+        let translateY = Math.max(this.minTranslateY, newY)
+        let zIndex = 0
+        let scale = 1
+        let blur = 0
+        this.$refs.layer.style[transform] = `translate3d(0, ${translateY}px, 0)`
+        const percent = Math.abs(newY / this.imageHeight)
+        if (newY > 0) {
+          scale = 1 + percent
+          zIndex = 10
+        } else {
+          blur = Math.min(20 * percent, 20)
+        }
+        // 只有ios可以看到
+        this.$refs.filter.style[backdrop] = `blur(${blur}px)`
+        if (newY < this.minTranslateY) {
+          zIndex = 10
+          this.$refs.bgImage.style.paddingTop = 0
+          this.$refs.bgImage.style.height = `${RESERVED_HEIGHT}px`
+          this.$refs.playBtn.style.display = 'none'
+        } else {
+          this.$refs.bgImage.style.paddingTop = '70%'
+          this.$refs.bgImage.style.height = 0
+          this.$refs.playBtn.style.display = ''
+        }
+        this.$refs.bgImage.style.zIndex = zIndex
+        this.$refs.bgImage.style[transform] = `scale(${scale})`
+      }
+    },
+    components: {
+      Scroll,
+      SongList
+    }
+  }
+
+播放器内核 ***重点
+播放器数据必须是全局的 用vuex管理
+state.js getters.js mutation-types.js mutations.js
+const state = {
+  singer: {},
+  playing: false,
+  fullScreen: false,
+  playlist: [],
+  sequenceList: [],
+  mode: playMode.sequence,
+  currentIndex: -1
+}
+// index.js
+import Vue from 'vue'
+import Vuex from 'vuex'
+import * as actions from './actions'
+import * as getters from './getters'
+import state from './state'
+import mutations from './mutations'
+import ceateLogger from 'vuex/dist/logger'
+
+Vue.use(Vuex)
+
+const debug = process.env.NODE_ENV !== 'production'
+
+export default new Vuex.Store({
+  actions,
+  getters,
+  state,
+  mutations,
+  strict: debug,
+  plugins: debug ? [ceateLogger()] : []
+})
+
+// CSS3动画
+&.normal-enter-active, &.normal-leave-active
+  transition: all 0.4s
+  .top, .bottom
+    transition: all 0.4s cubic-bezier(0.86, 0.18, 0.82, 1.32)
+&.normal-enter, &.normal-leave-to
+  opacity: 0
+  .top
+    transform: translate3d(0, -100px, 0)
+  .bottom
+    transform: translate3d(0, 100px, 0)
+
+&.mini-enter-active, &.mini-leave-active
+  transition: all 0.4s
+&.mini-enter, &.mini-leave-to
+  opacity: 0
+
+使用create-keyframe-animation库用js写css3动画
+import animations from 'create-keyframe-animation'
+enter(el, done) {
+  const {x, y, scale} = this._getPosAndScale()
+  console.log(x, y, scale)
+  let animation = {
+    0: {
+      transform: `translate3d(${x}px,${y}px,0) scale(${scale})`
+    },
+    60: {
+      transform: `translate3d(0,0,0) scale(1.1)`
+    },
+    100: {
+      transform: `translate3d(0,0,0) scale(1)`
+    }
+  }
+
+  animations.registerAnimation({
+    name: 'move',
+    animation,
+    presets: {
+      duration: 10000,
+      easing: 'linear'
+    }
+  })
+
+  animations.runAnimation(this.$refs.cdWrapper, 'move', done)
+},
+afterEnter() {
+  animations.unregisterAnimation('move')
+  this.$refs.cdWrapper.style.animation = ''
+},
+leave(el, done) {
+  this.$refs.cdWrapper.style.transition = 'all 0.4s'
+  const {x, y, scale} = this._getPosAndScale()
+  this.$refs.cdWrapper.style[transform] = `translate3d(${x}px, ${y}px, 0) scale($(scale))`
+  this.$refs.cdWrapper.addEventListener('transitionend', done)
+},
+afterLeave() {
+  this.$refs.cdWrapper.style.transition = ''
+  this.$refs.cdWrapper.style[transform] = ''
+},
+_getPosAndScale() {
+  const targetWidth = 40
+  const paddingLeft = 40
+  const paddingBottom = 30
+  const paddingTop = 80
+  const width = window.innerWidth * 0.8
+  const scale = targetWidth / width
+  const x = -(window.innerWidth / 2 - paddingLeft)
+  const y = window.innerHeight - paddingTop - width / 2 - paddingBottom
+  return {
+    x,
+    y,
+    scale
+  }
+}
+
+播放功能 audio
+<audio ref="audio" :src="currentSong.url" @canplay="ready" @error="error" @timeupdate="updateTime"></audio>
+播放歌曲 按钮控制播放
+watch: {
+  currentSong() {
+    this.$nextTick(() => {
+      this.$refs.audio.play()
+    })
+  },
+  playing(newPlaying) {
+    const audio = this.$refs.audio
+    this.$nextTick(() => {
+      newPlaying ? audio.play() : audio.pause()
+    })
+  }
+}
+
+拖动进度条 进度条组件
+<template>
+  <div class="progress-bar" ref="progressBar" @click="progressClick">
+    <div class="bar-inner">
+      <div class="progress" ref="progress"></div>
+      <div class="progress-btn-wrapper" ref="progressBtn"
+        @touchstart.prevent="progressTouchStart"
+        @touchmove="progressTouchMove"
+        @touchend="progressTouchEnd"
+      >
+        <div class="progress-btn"></div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script type="text/ecmascript-6">
+  import {prefixStyle} from 'common/js/dom'
+
+  const progressBtnWidth = 16
+  const transform = prefixStyle('transform')
+
+  export default {
+    props: {
+      percent: {
+        type: Number,
+        default: 0
+      }
+    },
+    created() {
+      this.touch = {}
+    },
+    methods: {
+      progressClick(e) {
+        this._offset(e.offsetX)
+        this._triggerPercent()
+      },
+      progressTouchStart(e) {
+        this.touch.initiated = true
+        this.touch.startX = e.touches[0].pageX
+        this.touch.left = this.$refs.progress.clientWidth
+      },
+      progressTouchMove(e) {
+        if (!this.touch.initiated) {
+          return
+        }
+        const deltaX = e.touches[0].pageX - this.touch.startX
+        const offsetWidth = Math.min(this.$refs.progressBar.clientWidth - progressBtnWidth, Math.max(0, this.touch.left + deltaX))
+        this._offset(offsetWidth)
+      },
+      progressTouchEnd() {
+        this.touch.initiated = false
+        this._triggerPercent()
+      },
+      _triggerPercent() {
+        const barWidth = this.$refs.progressBar.clientWidth - progressBtnWidth
+        const percent = this.$refs.progress.clientWidth / barWidth
+        this.$emit('percentChange', percent)
+      },
+      _offset(offsetWidth) {
+        this.$refs.progress.style.width = `${offsetWidth}px`
+          this.$refs.progressBtn.style[transform] = `translate3d(${offsetWidth}px,0,0)`
+      }
+    },
+    watch: {
+      percent(newPercent) {
+        if (newPercent >= 0 && !this.touch.initiated) {
+          const barWidth = this.$refs.progressBar.clientWidth - progressBtnWidth
+          const offsetWidth = newPercent * barWidth
+          this._offset(offsetWidth)
+        }
+      }
+    }
+  }
+</script>
+
+<style scoped lang="stylus" rel="stylesheet/stylus">
+  @import "~common/stylus/variable"
+
+  .progress-bar
+    height: 30px
+    .bar-inner
+      position: relative
+      top: 13px
+      height: 4px
+      background: rgba(0, 0, 0, 0.3)
+      .progress
+        position: absolute
+        height: 100%
+        background: $color-theme
+      .progress-btn-wrapper
+        position: absolute
+        left: -8px
+        top: -13px
+        width: 30px
+        height: 30px
+        .progress-btn
+          position: relative
+          top: 7px
+          left: 7px
+          box-sizing: border-box
+          width: 16px
+          height: 16px
+          border: 3px solid $color-text
+          border-radius: 50%
+          background: $color-theme
+</style>
+
+圆形进度条 用svg做 两个circle
+<svg :width="radius" :height="radius" viewBox="0 0 100 100" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <circle class="progress-background" r="50" cx="50" cy="50" fill="transparent"/>
+  <circle class="progress-bar" r="50" cx="50" cy="50" fill="transparent" :stroke-dasharray="dashArray"
+          :stroke-dashoffset="dashOffset"/>
+</svg>
+
+播放器切换模式
+
+歌词的显示
